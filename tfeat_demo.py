@@ -22,10 +22,27 @@ class LutorpyNet:
         self.net = torch.load(model_file)
         self.ones_arr = np.ones((self.input_sz, self.input_sz), dtype=np.uint8)
 
+    def rectify_patch(self, img, kp, patch_sz):
+        s = 1.5 * float(kp.size) / float(patch_sz)
+
+        c = 1.0 if (kp.angle < 0) else np.cos(kp.angle*np.pi/180)
+        s = 0.0 if (kp.angle < 0) else np.sin(kp.angle*np.pi/180)
+
+        M = np.array([[s*c, -s*s, (-s*c + s*s)*patch_sz / 2.0 + kp.pt[0]],
+                      [s*s,  s*c, (-s*s - s*c)*patch_sz / 2.0 + kp.pt[1]]])
+
+        rot = cv2.warpAffine(img, M, (patch_sz, patch_sz), cv2.WARP_INVERSE_MAP + cv2.INTER_CUBIC + cv2.WARP_FILL_OUTLIERS)
+        return rot
+
     def extract_patches(self, img, kpts):
-        patches = []  
+        patches = []
         for kp in kpts:
-            sub = cv2.getRectSubPix(img, (int(kp.size*1.3), int(kp.size*1.3)), kp.pt)
+            # extract patch
+            #sub = cv2.getRectSubPix(img, (int(kp.size*1.3), int(kp.size*1.3)), kp.pt)
+            sub = self.rectify_patch(img, kp, self.input_sz)
+            print sub.shape
+            print sub
+            # resize the patch
             res = cv2.resize(sub, (self.input_sz, self.input_sz))
             # subtract mean
             nmean = res - (self.ones_arr * cv2.mean(res)[0])
@@ -109,6 +126,7 @@ def main(torch_file, video_file, object_img):
 
     # initialise ORB detector
     det = cv2.ORB_create(1000)
+    #det = cv2.FastFeatureDetector_create()
     des = cv2.ORB_create(1000)
 
     # initialise matcher
@@ -135,7 +153,7 @@ def main(torch_file, video_file, object_img):
         kp2   = det.detect(gray, None)
         des21 = net.compute(gray, kp2)
         _ , des22 = des.compute(gray, kp2)
-   
+
         # match features
         good1 = bf.match(des11, des21) 
         good2 = bf.match(des12, des22) 
